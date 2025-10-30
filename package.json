@@ -1,0 +1,39 @@
+{
+  "name": "sub-billing",
+  "version": "1.0.0",
+  "description": "Subscription Billing Microservices System",
+  "private": true,
+  "engines": {
+    "node": "24.x",
+    "npm": "11.x"
+  },
+  "workspaces": ["payment-gateway-service", "subscription-service"],
+  "scripts": {
+    "prepare": "npx --yes lefthook install",
+    "dev": "npm run dev --workspaces",
+    "dev:gateway": "npm run dev --workspace=payment-gateway-service",
+    "dev:subscription": "npm run dev --workspace=subscription-service",
+    "build": "npm run build --workspaces",
+    "build:gateway": "npm run build --workspace=payment-gateway-service",
+    "build:subscription": "npm run build --workspace=subscription-service",
+    "test": "npm run test --workspaces",
+    "test:gateway": "npm run test --workspace=payment-gateway-service",
+    "test:subscription": "npm run test --workspace=subscription-service",
+    "check": "biome check --write .",
+    "check:ci": "biome ci .",
+    "e2e:up": "docker compose up -d --build",
+    "e2e:down": "docker compose down -v",
+    "test:e2e": "npm run e2e:up && NODE_ENV=test jest --config ./e2e/jest-e2e.config.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/jest": "^29.5.13",
+    "@types/supertest": "^6.0.2",
+    "jest": "^29.7.0",
+    "lefthook": "^1.8.3",
+    "supertest": "^6.3.3",
+    "testcontainers": "^11.7.2",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.6.3"
+  }
+}

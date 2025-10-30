@@ -1,0 +1,67 @@
+## docker compose v2 ignores 'version'; remove to avoid warnings
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    # No host port mapping needed for E2E; services access via internal network
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-sub_billing_test}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - billing-network
+
+  subscription-service:
+    build:
+      context: ./subscription-service
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-test}
+      DATABASE_URL: ${SUBSCRIPTION_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/sub_billing_test?schema=subscription}
+      JWT_SECRET: ${SUBSCRIPTION_JWT_SECRET:-testsecret}
+      PORT: ${SUBSCRIPTION_PORT:-3000}
+      PAYMENT_SERVICE_URL: ${SUBSCRIPTION_PAYMENT_SERVICE_URL:-http://payment-gateway-service:3001}
+      BASE_URL: ${SUBSCRIPTION_BASE_URL:-http://subscription-service:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "sleep 5 && npm run start:prod"
+    networks:
+      - billing-network
+
+  payment-gateway-service:
+    build:
+      context: ./payment-gateway-service
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: ${NODE_ENV:-test}
+      DATABASE_URL: ${PAYMENT_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/sub_billing_test?schema=payment}
+      PORT: ${PAYMENT_PORT:-3001}
+      SUBSCRIPTION_SERVICE_URL: ${PAYMENT_SUBSCRIPTION_SERVICE_URL:-http://subscription-service:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "sleep 5 && npm run start:prod"
+    networks:
+      - billing-network
+
+volumes:
+  postgres_data:
+
+
+networks:
+  billing-network:
+    driver: bridge
