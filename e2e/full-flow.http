@@ -1,0 +1,157 @@
+### Variables
+### Edit these values as needed for your environment
+@baseUrl = http://localhost:3000
+@payUrl = http://localhost:3001
+@email = seed.user@example.com
+@password = Password123!
+@planIdBasic = fixed-basic
+@planIdPro = fixed-pro
+
+### These should be set manually after Step 1 (login) and Step 3 (create subscription)
+### Copy values from response bodies and update here
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5NzZkNDc3Zi1mOGU5LTQyNjQtYmRhMi1mN2QxNzA0NGY2MDAiLCJlbWFpbCI6InNlZWQudXNlckBleGFtcGxlLmNvbSIsImlhdCI6MTc2MTkyODMyMywiZXhwIjoxNzYyMDE0NzIzfQ.w8sznNb2q6YnRARIpFBn9iEyl1siiHf7X9Mf1tx-TRk
+@subscriptionId = f5b82cd0-7f32-4565-8db2-c0c187ad2e4d
+
+###############################################################################
+# E2E Flow: Full Subscription Lifecycle
+#
+# This file simulates the complete E2E test flow from full-flow.spec.ts
+# Each request can be run individually by clicking "Send Request" above it.
+#
+# WORKFLOW:
+# 1. Run Step 1 (Login) -> Copy access_token from response
+# 2. Update @token variable at the top: @token = your_token_here
+# 3. Run Step 2 and Step 3 (optional/required)
+# 4. After Step 3, copy subscription "id" from response
+# 5. Update @subscriptionId variable at the top: @subscriptionId = your_id_here
+# 6. Continue with remaining steps
+#
+# Prerequisites:
+# - Services must be running: docker-compose up
+# - Database must be seeded: cd subscription-service && npx prisma db seed
+###############################################################################
+
+### Test: Health Check (verify services are running)
+GET {{baseUrl}}/health
+
+###
+
+### Step 1: Login and Get JWT Token
+### After running this, copy the access_token from the response
+### and set it as @token = your_token_here at the top of this file
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+###
+
+### Step 2: (Optional) List Existing Subscriptions
+### ⚠️ PREREQUISITE: You must run Step 1 first and update @token variable!
+### Check if there are any existing subscriptions for cleanup
+GET {{baseUrl}}/subscriptions
+Authorization: Bearer {{token}}
+
+###
+
+### Step 3: Create Subscription with Basic Plan
+### ⚠️ PREREQUISITE: You must run Step 1 first and update @token variable!
+### Creates a PENDING subscription and initiates payment
+### Payment gateway will process and send webhook (80% success rate)
+### After this step, copy the "id" from response and update @subscriptionId at the top
+POST {{baseUrl}}/subscriptions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  # "planId": "{{planIdBasic}}"
+  "planId": "fixed-pro"
+}
+
+### Note: Copy the subscription id from the response and set @subscriptionId at the top of this file
+
+###
+
+### Step 4: Get Subscription Status
+### Poll this endpoint until status changes from PENDING to ACTIVE or CANCELLED
+### In manual testing, you may need to run this multiple times
+### Expected: Status will be PENDING initially, then ACTIVE (80% chance) or CANCELLED (20% chance)
+GET {{baseUrl}}/subscriptions/{{subscriptionId}}
+Authorization: Bearer {{token}}
+
+###
+
+### Step 5: Upgrade Subscription to Pro Plan
+### Prerequisite: Subscription must be ACTIVE
+### This will calculate prorated amount and initiate payment
+### After upgrade, status may briefly go to PENDING while payment is processed
+PATCH {{baseUrl}}/subscriptions/{{subscriptionId}}/upgrade
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "planId": "{{planIdPro}}"
+}
+
+###
+
+### Step 6: Get Subscription Status After Upgrade
+### Poll this endpoint until status is ACTIVE or CANCELLED
+### Verify that planId has changed to "fixed-pro"
+GET {{baseUrl}}/subscriptions/{{subscriptionId}}
+Authorization: Bearer {{token}}
+
+###
+
+### Step 7: Downgrade Subscription Back to Basic Plan
+### Prerequisite: Subscription must be ACTIVE
+### Downgrades do not require payment - plan change is immediate
+PATCH {{baseUrl}}/subscriptions/{{subscriptionId}}/downgrade
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "planId": "{{planIdBasic}}"
+}
+
+###
+
+### Step 8: Verify Plan Change After Downgrade
+### Verify that planId has changed back to "fixed-basic"
+GET {{baseUrl}}/subscriptions/{{subscriptionId}}
+Authorization: Bearer {{token}}
+
+###
+
+### Step 9: List Payment Transactions
+### Get all payment transactions from the payment gateway service
+GET {{payUrl}}/payments
+
+###
+
+### Step 10: (Optional) Cancel Subscription
+### Cancels the active subscription
+DELETE {{baseUrl}}/subscriptions/{{subscriptionId}}
+Authorization: Bearer {{token}}
+
+###
+
+### Additional: Get All Subscriptions
+### List all subscriptions for the authenticated user
+GET {{baseUrl}}/subscriptions
+Authorization: Bearer {{token}}
+
+###
+
+### Additional: Get Subscription by ID (alternative)
+### Use this if you want to manually check a specific subscription
+### Replace {{subscriptionId}} with an actual ID or use the variable set from Step 3
+GET {{baseUrl}}/subscriptions/{{subscriptionId}}
+Authorization: Bearer {{token}}
+
+###
+
+

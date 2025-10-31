@@ -23,10 +23,10 @@ graph TB
     SS -->|"CRUD: Users, Plans,<br/>Subscriptions"| DB
     PG -->|"Log Transactions"| DB
     
-    style Client fill:#e1f5ff,stroke:#01579b
-    style SS fill:#fff4e1,stroke:#e65100
-    style PG fill:#ffe1f5,stroke:#880e4f
-    style DB fill:#e8f5e9,stroke:#1b5e20
+    style Client fill:#2196F3,stroke:#0D47A1,color:#ffffff
+    style SS fill:#FF9800,stroke:#E65100,color:#000000
+    style PG fill:#E91E63,stroke:#880E4F,color:#ffffff
+    style DB fill:#4CAF50,stroke:#1B5E20,color:#000000
 ```
 
 ## Features
@@ -46,7 +46,7 @@ graph TB
 ## Tech Stack
 
 - **Framework**: NestJS
-- **Database**: PostgreSQL with TypeORM
+- **Database**: PostgreSQL with Prisma
 - **Authentication**: JWT
 - **API Documentation**: Swagger/OpenAPI
 - **Containerization**: Docker & Docker Compose
@@ -58,38 +58,10 @@ graph TB
 
 ## Environment Variables
 
-This project uses a multi-level environment configuration:
-- **Root `.env.example`**: Contains shared defaults for Docker Compose
-- **Service `.env.example`**: Service-specific overrides for local development
+Docker Compose provides sane defaults, so no `.env` file is required to start the stack. You can override any value via a root `.env` file or shell environment variables.
 
-### For Docker (Recommended)
-```bash
-# Copy root environment file
-cp .env.example .env
-# Edit .env with your settings (optional)
-```
+For examples of values used in tests, see `e2e/env.test.sample`.
 
-The root `.env` file contains prefixed variables (e.g., `SUBSCRIPTION_DATABASE_URL`, `PAYMENT_DATABASE_URL`) that Docker Compose uses to configure each service.
-
-### For Local Development (Without Docker)
-
-Each service can use both root and local `.env` files. Local files override root defaults:
-
-#### Subscription Service
-```bash
-cd subscription-service
-cp .env.example .env
-# Edit .env with your local settings
-```
-
-#### Payment Gateway Service
-```bash
-cd payment-gateway-service
-cp .env.example .env
-# Edit .env with your local settings
-```
-
-**How it works**: Services load `.env` from their directory first (local overrides), then fall back to the root `.env` (shared defaults). This prevents configuration drift between Docker and local development.
 
 ## Quick Start
 
@@ -97,15 +69,12 @@ cp .env.example .env
 
 ```bash
 git clone <repository-url>
-cd sub-billing
+cd subscription-billing
 ```
 
 ### 2. Start Services
 
 ```bash
-# Copy environment variables (first time only)
-cp .env.docker .env
-
 # Start services
 docker-compose up --build
 ```
@@ -115,8 +84,9 @@ Note: You can edit `.env` to customize database credentials, ports, and secrets.
 This command will:
 - Build both service Docker images
 - Start PostgreSQL database
-- Auto-synchronize TypeORM schemas (Docker sets NODE_ENV=test)
 - Start both services
+- **Automatically sync database schema** using `prisma db push` (development only)
+- **Automatically seed the subscription service** with sample users and plans (if seed script exists)
 
 Services will be available at:
 - Subscription Service: http://localhost:3000
@@ -124,20 +94,30 @@ Services will be available at:
 - Swagger UI (Subscription): http://localhost:3000/api
 - Swagger UI (Payment): http://localhost:3001/api
 
-### 3. Access the APIs
-
-Open your browser to view Swagger documentation:
-- http://localhost:3000/api (Subscription Service)
-- http://localhost:3001/api (Payment Gateway Service)
-
 ## Test Credentials
 
-The database is automatically seeded with test data:
-- **User 1**: `user1@example.com` / `password123`
-- **User 2**: `user2@example.com` / `password123`
-- **Plans**: Basic Plan ($9.99/month), Pro Plan ($29.99/month), Premium Plan ($99.99/year)
+**Note**: When using `docker-compose up`, the subscription service automatically seeds the database with sample users and plans during startup. The following is only needed if you're running services manually or want to re-seed:
+
+```bash
+# From the repository root
+cd subscription-service
+
+# If using migrations (instead of db push), deploy committed migrations first
+# npm run prisma:migrate:deploy
+
+# Run the seed script defined in prisma/seed.ts
+npx prisma db seed
+```
+
+After seeding:
+- **User**: `seed.user@example.com` / `Password123!`
+- **Plans**:
+  - `fixed-basic` - Basic Plan ($9.99/month)
+  - `fixed-pro` - Pro Plan ($29.99/month)
 
 ## API Flow Walkthrough
+
+> **💡 Tip:** For interactive testing, use the REST Client file (`e2e/full-flow.http`) with VSCode's REST Client extension. See the [Manual API Testing with REST Client](#manual-api-testing-with-rest-client) section for detailed instructions.
 
 ### Complete Subscription Flow
 
@@ -176,8 +156,8 @@ sequenceDiagram
 curl -X POST http://localhost:3000/auth/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "user1@example.com",
-    "password": "password123"
+    "email": "seed.user@example.com",
+    "password": "Password123!"
   }'
 ```
 
@@ -195,7 +175,7 @@ curl -X POST http://localhost:3000/subscriptions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -d '{
-    "planId": "basic-plan"
+    "planId": "fixed-basic"
   }'
 ```
 
@@ -205,6 +185,8 @@ This will:
 3. Payment gateway simulates payment (80% success rate)
 4. Payment gateway sends webhook to subscription service
 5. Subscription status updated (ACTIVE or CANCELLED)
+
+**Note**: You must use a valid `planId` that exists in the database. The seeded plans are `fixed-basic` and `fixed-pro`. You can also create your own plans via the `/plans` endpoint.
 
 #### 3. Check Subscription Status
 
@@ -220,9 +202,20 @@ curl -X PATCH http://localhost:3000/subscriptions/{subscription_id}/upgrade \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -d '{
-    "planId": "pro-plan"
+    "planId": "fixed-pro"
   }'
 ```
+
+This will:
+1. Validate that subscription is ACTIVE
+2. Verify the new plan has a higher price than the current plan
+3. Calculate prorated amount (difference between new and current plan prices)
+4. Initiate payment request to payment gateway for the prorated amount
+5. Payment gateway simulates payment (80% success rate)
+6. Payment gateway sends webhook to subscription service
+7. Subscription status updated via webhook (stays ACTIVE on success, or CANCELLED on failure)
+
+**Note**: The subscription must be ACTIVE to upgrade. Only plans with a higher price than the current plan are allowed.
 
 #### 5. Cancel Subscription
 
@@ -270,27 +263,45 @@ curl -X DELETE http://localhost:3000/subscriptions/{subscription_id} \
 - `GET /payments` - Get all payment transactions
 - `GET /payments/:id` - Get payment transaction by ID
 
-## Sample Payloads
+## Testing
 
-### Create Subscription
+### E2E Tests
 
-Request to Payment Gateway:
-```json
-{
-  "subscriptionId": "uuid-here",
-  "amount": 29.99,
-  "webhookUrl": "http://subscription-service:3000/webhooks/payment"
-}
+End-to-end API tests run the full flow described above (login → create plan → create subscription → webhook → status check) against real containers started via docker-compose. The tests create all required data via API; no seeds are required.
+
+**Setup:**
+```bash
+# Copy sample test environment to project root as .env.test
+cp e2e/env.test.sample .env.test
 ```
 
-Webhook sent to Subscription Service:
-```json
-{
-  "subscriptionId": "uuid-here",
-  "paymentId": "payment-uuid",
-  "success": true
-}
+**Run:**
+```bash
+npm run test:e2e
 ```
+
+This will:
+- Build and start services using `.env.test`
+- Wait for `http://localhost:3000` and `http://localhost:3001`
+- Execute Jest specs in `e2e/`
+- Tear down all containers afterward
+
+### Manual API Testing with REST Client
+
+For interactive manual testing, you can use the REST Client file (`e2e/full-flow.http`) with VSCode's REST Client extension.
+
+**Prerequisites:**
+1. Install REST Client extension in VSCode (by Huachao Mao)
+2. Start services: `docker-compose up`
+3. Seeding is automatic when using docker-compose
+
+**Usage:**
+1. Open `e2e/full-flow.http` in VSCode
+2. Run Step 1 (Login) → Copy `access_token` → Update `@token` variable
+3. Run Step 3 (Create Subscription) → Copy subscription `id` → Update `@subscriptionId` variable
+4. Continue with remaining steps
+
+See the [API Flow Walkthrough](#api-flow-walkthrough) section for more details on the complete flow.
 
 ## Deployment
 
@@ -302,9 +313,14 @@ Webhook sent to Subscription Service:
    - Update service URLs for service-to-service communication
 
 2. **Database Schema Management**
-   - In Docker, schemas are auto-synchronized by TypeORM because `NODE_ENV=test`
-   - For staging/production, disable `synchronize` and use proper TypeORM migrations
-   - Recommendation: add TypeORM migrations before deploying to non-test environments
+   - **Development (via Docker Compose)**: Schema is automatically synced using `prisma db push` when services start. This is convenient for local development but does not maintain migration history.
+   - **Development (manual)**: To create versioned migrations for development (from repo root):
+     - `npm run prisma:migrate:subscription`
+     - `npm run prisma:migrate:gateway`
+   - **Staging/Production**: **MUST use `migrate deploy`** to apply committed migrations (from repo root):
+     - `npm run prisma:migrate:deploy --workspace=subscription-service`
+     - `npm run prisma:migrate:deploy --workspace=payment-gateway-service`
+   - **Important**: In production, replace the `db push` commands in docker-compose with `migrate deploy` or handle migrations via CI/CD pipeline before starting services.
 
 3. **Scaling**
    - Each service is stateless and can be horizontally scaled
@@ -323,103 +339,29 @@ Webhook sent to Subscription Service:
    - Configure health check endpoints
    - Set up alerting for critical failures
 
-## Development
-
-### Running Locally (Without Docker)
-
-```bash
-# Start PostgreSQL
-docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:15-alpine
-
-# Subscription Service
-cd subscription-service
-npm install
-npm run dev
-
-# Payment Gateway Service (another terminal)
-cd payment-gateway-service
-npm install
-npm run dev
-```
-
-### Running Tests
-
-```bash
-# Subscription Service
-cd subscription-service
-npm test
-
-# Payment Gateway Service
-cd payment-gateway-service
-npm test
-```
-
-### E2E Tests
-
-End-to-end API tests run the full flow described above (login → create plan → create subscription → webhook → status check) against real containers started via docker-compose. The tests create all required data via API; no seeds are required.
-
-Setup:
-```bash
-# Copy sample test environment to project root as .env.test
-cp e2e/env.test.sample .env.test
-```
-
-Run:
-```bash
-npm run test:e2e
-```
-
-This will:
-- Build and start services using `.env.test`
-- Wait for `http://localhost:3000` and `http://localhost:3001`
-- Execute Jest specs in `e2e/`
-- Tear down all containers afterward
-
 ## Time Spent & Assumptions
 
 ### Time Spent
-- Project setup and configuration: 2 hours
-- Database schema design: 1 hour
-- Subscription service implementation: 4 hours
-- Payment gateway implementation: 3 hours
-- Webhook integration: 2 hours
-- Docker setup and documentation: 2 hours
-- **Total: ~14 hours**
+- Project setup and initial configuration: 2 hours
+- Database schema and services implementation: 5 hours
+- Docker setup and documentation: 3 hours
+- **Total: ~10 hours**
 
 ### Assumptions & Trade-offs
 
-1. **Webhook Retry Logic**: Implemented basic retry with exponential backoff. In production, consider using a message queue for more reliable delivery.
+1. **Webhook Retry Logic**: Implemented basic retry with linear backoff (1s, 2s, 3s delays). In production, consider using a message queue for more reliable delivery.
 
 2. **Payment Simulation**: Simple random success/failure (80% success). Real implementation would integrate with payment providers like Stripe, PayPal.
 
-3. **Prorated Calculations**: Simplified proration for upgrades. Full implementation would consider billing cycle dates and partial periods.
+3. **Prorated Calculations**: Simplified proration for upgrades (simple price difference). Full implementation would consider billing cycle dates and partial periods.
 
 4. **Single Database**: Both services use same PostgreSQL instance for simplicity. Production should use separate databases for true isolation.
 
-5. **No Webhook Signature Verification**: Added placeholders for security but not fully implemented. Production should include HMAC signature verification.
+5. **No Webhook Signature Verification**: Added placeholders for security but not fully implemented. Production should include signature verification.
 
-6. **No Rate Limiting**: Added throttler but using default values. Production should configure appropriate limits.
+6. **Rate Limiting**: Throttler configured with basic values (10 requests per 60 seconds). Production should configure appropriate limits based on expected load.
 
-7. **Error Handling**: Basic error handling implemented. Production needs comprehensive error tracking and logging.
+7. **Error Handling**: Basic error handling implemented with NestJS exceptions. Production needs comprehensive error tracking and logging.
 
-8. **Testing**: Basic structure provided but tests need to be written. Unit tests for business logic and integration tests for API flows are needed.
-
-## Troubleshooting
-
-### Services won't start
-- Ensure ports 3000, 3001, and 5432 are not in use
-- Check Docker logs: `docker-compose logs`
-
-### Database connection errors
-- Wait for PostgreSQL to be healthy: `docker-compose ps`
-- Check database URL in environment variables
-
-### Webhook not received
-- Check payment service logs: `docker-compose logs payment-gateway-service`
-- Verify network connectivity between services
-- Check webhook URL is correct
-
-## License
-
-MIT
+8. **Testing**: Comprehensive unit tests are implemented for key business logic (35 tests in subscription-service, 11 tests in payment-gateway-service). E2E tests cover full API flows. Additional integration tests could be added for more complex scenarios.
 
