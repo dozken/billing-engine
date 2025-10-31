@@ -1,0 +1,32 @@
+generator client {
+  provider = "prisma-client-js"
+  output = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model PaymentTransaction {
+  id             String         @id @default(uuid())
+  subscriptionId String
+  amount         Decimal
+  status         PaymentStatus  @default(PENDING)
+  webhookUrl     String
+  attempts       Int            @default(0)
+  response       String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([subscriptionId])
+  @@index([status])
+}
+
+
