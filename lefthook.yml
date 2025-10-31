@@ -1,0 +1,18 @@
+# Lefthook configuration for sub-billing monorepo
+# Documentation: https://lefthook.dev/configuration/
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: biome-check
+      run: npm run check -- {staged_files}
+      glob: "*.ts"
+      stage_fixed: true
+
+pre-push:
+  jobs:
+    - name: biome-ci-check
+      run: npm run check:ci
+      tags:
+        - lint
+        - formatting

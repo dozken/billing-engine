@@ -1,0 +1,30 @@
+# Lefthook configuration for microservices project
+# Runs hooks in parallel for better performance
+
+pre-commit:
+  parallel: true
+  commands:
+    # Lint and format with Biome (only changed files)
+    biome-check:
+      run: npx --yes biome check --write {staged_files}
+      stage_fixed: true
+
+pre-push:
+  parallel: true
+  commands:
+    # Run tests for subscription service
+    test-subscription:
+      root: subscription-service
+      run: npm test -- --passWithNoTests
+    
+    # Run tests for payment gateway service
+    test-payment:
+      root: payment-gateway-service
+      run: npm test -- --passWithNoTests
+
+# Optional: Uncomment to enforce commit message format
+# commit-msg:
+#   commands:
+#     commit-msg:
+#       run: echo "Add commit-msg validation here if needed"
+

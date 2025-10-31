@@ -10,6 +10,7 @@
   "workspaces": ["payment-gateway-service", "subscription-service"],
   "scripts": {
     "prepare": "npx --yes lefthook install",
+    "postinstall": "npm run prisma:generate",
     "dev": "npm run dev --workspaces",
     "dev:gateway": "npm run dev --workspace=payment-gateway-service",
     "dev:subscription": "npm run dev --workspace=subscription-service",
@@ -21,9 +22,14 @@
     "test:subscription": "npm run test --workspace=subscription-service",
     "check": "biome check --write .",
     "check:ci": "biome ci .",
-    "e2e:up": "docker compose up -d --build",
-    "e2e:down": "docker compose down -v",
-    "test:e2e": "npm run e2e:up && NODE_ENV=test jest --config ./e2e/jest-e2e.config.ts"
+    "test:e2e": "NODE_ENV=test jest --config ./e2e/jest-e2e.config.ts",
+    "e2e:up": "docker compose up -d",
+    "e2e:down": "docker compose down",
+    "prisma:generate": "npm run prisma:generate:subscription && npm run prisma:generate:gateway",
+    "prisma:generate:subscription": "npm run prisma:generate --workspace=subscription-service",
+    "prisma:generate:gateway": "npm run prisma:generate --workspace=payment-gateway-service",
+    "prisma:migrate:subscription": "npm run prisma:migrate --workspace=subscription-service",
+    "prisma:migrate:gateway": "npm run prisma:migrate --workspace=payment-gateway-service"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
